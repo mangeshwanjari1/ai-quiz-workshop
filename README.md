@@ -1,45 +1,34 @@
-# AI Quiz Workshop — Module 4
+# AI Quiz Workshop — Module 5
 
-## Features
-Student registration/login, GPT-generated quizzes based on teacher material, automatic MCQ marking, SQLite attempt history, student progress chart, teacher login, upload, attempt filtering and detailed review.
+Extends Module 4 with **Agent 2: email feedback**. Previous accounts and attempts remain intact.
 
 ## Start
-1. Python 3.10+ recommended.
-2. `python -m venv .venv`
-3. Activate: Windows PowerShell `.venv\Scripts\Activate.ps1` / macOS `source .venv/bin/activate`
-4. `python -m pip install -r requirements.txt`
-5. Set `OPENAI_API_KEY` and `TEACHER_PASSWORD` environment variables (see below).
-6. `streamlit run app.py`
 
-Windows PowerShell:
-```powershell
-$env:OPENAI_API_KEY="YOUR_KEY"
-$env:TEACHER_PASSWORD="CHOOSE_A_LONG_RANDOM_PASSWORD"
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
-macOS Terminal:
-```bash
-export OPENAI_API_KEY="YOUR_KEY"
-export TEACHER_PASSWORD="CHOOSE_A_LONG_RANDOM_PASSWORD"
-streamlit run app.py
-```
+Set `OPENAI_API_KEY` and `TEACHER_PASSWORD` as in Module 4. To send email, set these environment variables (or Streamlit secrets):
 
-## Test
-- Register ST001 with a password of at least 8 characters; log in.
-- Choose LO1 / Introduction / Basics (sample included), generate and submit a quiz.
-- Take a second quiz and see progress.
-- Log out; log in as Teacher using TEACHER_PASSWORD; filter attempts and open question feedback.
-- Upload a UTF-8 `.txt` file with a new LO, chapter, topic; log in as student and select it from the dropdown.
-- Try incorrect passwords; they should fail.
+- `SMTP_HOST` — your email provider SMTP server
+- `SMTP_PORT` — usually 465 (SSL) or 587 (STARTTLS)
+- `SMTP_USER` — SMTP username
+- `SMTP_PASSWORD` — SMTP password or provider-specific app password
+- `SMTP_FROM` — verified sender address
 
-## GitHub
-```bash
-git status
-git add .
-git commit -m "Module 4: teacher dashboard and basic login"
-git push origin main
-```
+**Never commit passwords or API keys.** SMTP sending may have provider limits and may require account configuration. Email is sent only when the student has opted in and supplied an email address.
+
+## Demo steps
+
+1. Log in as a student, enter an email address, check opt-in and save.
+2. Generate and submit a quiz. The attempt saves even if email fails.
+3. Check the email status displayed with the score.
+4. Log in as teacher, select the attempt, preview the exact email and optionally send again.
+5. Inspect the `email_log` table with SQLite Browser.
 
 ## Limitations
-This is a teaching demo, not a production student information system. Teacher uses a shared password; no email verification, rate limiting, password reset, role administration, audit log or HTTPS enforcement by the application. The local SQLite DB and uploaded files are not reliable persistent storage on ephemeral cloud hosts. Never commit API keys, teacher passwords, or actual student data. GPT-generated keys and explanations can be inaccurate; teachers should review quizzes before high-stakes use. Existing Module 3 attempts remain in the database, but older demo student IDs must register before logging in.
+
+This is a **workshop prototype**. It uses a single shared teacher password, local SQLite and local uploaded materials; free ephemeral hosting does not reliably persist either. There is no queue, retry scheduler, verified email ownership, or production email deliverability guarantee. The email agent is a deterministic automation using GPT-produced explanations from Agent 1, not a separate GPT model call. Use synthetic student data for demos.

@@ -5,6 +5,9 @@ import sqlite3
 import hashlib
 import hmac
 import secrets
+import smtplib
+import ssl
+from email.message import EmailMessage
 from datetime import datetime, timezone
 
 import streamlit as st
@@ -101,17 +104,32 @@ def setup_database():
         conn.execute("""CREATE TABLE IF NOT EXISTS students (
             student_id TEXT PRIMARY KEY, salt TEXT NOT NULL, password_hash TEXT NOT NULL
         )""")
+        # Migration: preserve all previous student accounts and attempts.
+        columns = {r[1] for r in conn.execute('PRAGMA table_info(students)')}
+        if 'email' not in columns:
+            conn.execute('ALTER TABLE students ADD COLUMN email TEXT')
+        if 'email_opt_in' not in columns:
+            conn.execute('ALTER TABLE students ADD COLUMN email_opt_in INTEGER NOT NULL DEFAULT 0')
+        conn.execute("""CREATE TABLE IF NOT EXISTS email_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            attempt_id INTEGER NOT NULL,
+            recipient TEXT NOT NULL,
+            sent_at TEXT NOT NULL,
+            status TEXT NOT NULL,
+            error TEXT NOT NULL DEFAULT ''
+        )""")
 
 
 def save_attempt(student_id, metadata, details, score):
     with database_connection() as conn:
-        conn.execute("""INSERT INTO attempts
+        cursor = conn.execute("""INSERT INTO attempts
             (student_id, created_at, lo, chapter, topic, score, total, details_json)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", (
             student_id, datetime.now(timezone.utc).isoformat(),
             metadata['lo'], metadata['chapter'], metadata['topic'],
             score, len(details), json.dumps(details, ensure_ascii=False)
         ))
+        return cursor.lastrowid
 
 
 def get_attempts(student_id):
@@ -157,6 +175,85 @@ def attempt_details(attempt_id):
     with database_connection() as conn:
         row = conn.execute('SELECT details_json FROM attempts WHERE id=?', (attempt_id,)).fetchone()
     return json.loads(row[0]) if row else []
+
+
+def config(name):
+    value = os.environ.get(name, '')
+    try:
+        return st.secrets.get(name, value)
+    except (FileNotFoundError, KeyError):
+        return value
+
+
+def student_email(student_id):
+    with database_connection() as conn:
+        row = conn.execute('SELECT email, email_opt_in FROM students WHERE student_id=?',
+                           (student_id,)).fetchone()
+    return (row[0] or '', bool(row[1])) if row else ('', False)
+
+
+def update_student_email(student_id, email, opt_in):
+    email = email.strip()
+    if email and (len(email) > 254 or '@' not in email or email.startswith('@') or '.' not in email.split('@')[-1]):
+        raise ValueError('Enter a valid email address.')
+    if opt_in and not email:
+        raise ValueError('Enter an email address to enable automatic feedback.')
+    with database_connection() as conn:
+        conn.execute('UPDATE students SET email=?, email_opt_in=? WHERE student_id=?',
+                     (email, int(opt_in), student_id))
+
+
+def build_feedback_report(attempt_id):
+    with database_connection() as conn:
+        row = conn.execute("""SELECT student_id, created_at, lo, chapter, topic,
+                                  score, total, details_json FROM attempts WHERE id=?""",
+                           (attempt_id,)).fetchone()
+    if not row:
+        raise ValueError('Attempt not found.')
+    student, date, lo, chapter, topic, score, total, raw = row
+    details = json.loads(raw)
+    lines = [f'Hello {student},', '', 'Here is your quiz feedback.', '',
+             f'Attempt: {attempt_id}', f'Date (UTC): {date}',
+             f'LO: {lo} | Chapter: {chapter} | Topic: {topic}',
+             f'Score: {score}/{total} ({score / total * 100:.1f}%)', '']
+    for i, d in enumerate(details, 1):
+        lines += [f'Q{i}. {d["question"]}',
+                  f'Your answer: {d["selected_answer"]}',
+                  f'Correct answer: {d["correct_answer"]}',
+                  f'Result: {"Correct" if d["correct"] else "Incorrect"}',
+                  f'Explanation: {d["explanation"]}', '']
+    lines += ['Review the explanations and try another quiz whenever you are ready.',
+              'AI Quiz Workshop']
+    return f'Quiz feedback: {lo} / {topic} (attempt {attempt_id})', '\n'.join(lines)
+
+
+def send_feedback_email(attempt_id, recipient):
+    # No GPT call is needed: the first agent already supplied explanations.
+    host = config('SMTP_HOST')
+    username = config('SMTP_USER')
+    password = config('SMTP_PASSWORD')
+    sender = config('SMTP_FROM') or username
+    port = int(config('SMTP_PORT') or '465')
+    if not all((host, username, password, sender)):
+        raise RuntimeError('Configure SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD and SMTP_FROM.')
+    subject, body = build_feedback_report(attempt_id)
+    msg = EmailMessage()
+    msg['From'] = sender
+    msg['To'] = recipient
+    msg['Subject'] = subject
+    msg.set_content(body)
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=20, context=ssl.create_default_context()) as smtp:
+            smtp.login(username, password)
+            smtp.send_message(msg)
+    else:
+        with smtplib.SMTP(host, port, timeout=20) as smtp:
+            smtp.starttls(context=ssl.create_default_context())
+            smtp.login(username, password)
+            smtp.send_message(msg)
+    with database_connection() as conn:
+        conn.execute('INSERT INTO email_log(attempt_id, recipient, sent_at, status) VALUES (?, ?, ?, ?)',
+                     (attempt_id, recipient, datetime.now(timezone.utc).isoformat(), 'sent'))
 
 
 def material_choices():
@@ -253,6 +350,21 @@ if role == 'Teacher':
                 st.write('Correct answer:', d['correct_answer'])
                 st.write('Result:', 'Correct' if d['correct'] else 'Incorrect')
                 st.write('Explanation:', d['explanation'])
+        st.markdown('#### Agent 2 — Email preview')
+        subject, body = build_feedback_report(selected_id)
+        st.text_input('Email subject', subject, disabled=True)
+        st.text_area('Feedback email preview', body, height=280, disabled=True)
+        with database_connection() as conn:
+            selected_student = conn.execute('SELECT student_id FROM attempts WHERE id=?',
+                                            (selected_id,)).fetchone()[0]
+        recipient, opted_in = student_email(selected_student)
+        st.caption(f'Student email: {recipient or "Not provided"}; automatic emails: {"Enabled" if opted_in else "Disabled"}')
+        if st.button('Send feedback email', disabled=not (recipient and opted_in), key=f'send_{selected_id}'):
+            try:
+                send_feedback_email(selected_id, recipient)
+                st.success('Email sent.')
+            except Exception as exc:
+                st.error(f'Email not sent: {exc}')
 
     st.markdown('### Upload teaching material')
     with st.form('material_form'):
@@ -280,6 +392,18 @@ if role == 'Teacher':
                 st.error('Please upload UTF-8 text.')
     st.write('Available combinations:', material_choices())
 else:
+    st.subheader('Email feedback preferences')
+    current_email, current_opt_in = student_email(student_id)
+    with st.form('email_preferences'):
+        entered_email = st.text_input('Your email address', value=current_email)
+        opted_in = st.checkbox('Send my detailed quiz feedback by email after submission', value=current_opt_in)
+        save_preferences = st.form_submit_button('Save email preferences')
+    if save_preferences:
+        try:
+            update_student_email(student_id, entered_email, opted_in)
+            st.success('Email preferences saved.')
+        except ValueError as exc:
+            st.error(str(exc))
     st.subheader('Create your quiz')
     combinations = material_choices()
     if not combinations:
@@ -344,10 +468,19 @@ else:
                                         'explanation': q['explanation']})
                     score = sum(d['correct'] for d in details)
                     try:
-                        save_attempt(student_id, metadata, details, score)
+                        saved_attempt_id = save_attempt(student_id, metadata, details, score)
                     except sqlite3.Error as exc:
                         st.error(f'Could not save attempt: {exc}')
                     else:
+                        recipient, opted_in = student_email(student_id)
+                        if opted_in and recipient:
+                            try:
+                                send_feedback_email(saved_attempt_id, recipient)
+                                st.session_state.email_result = 'Feedback email sent.'
+                            except Exception as exc:
+                                st.session_state.email_result = f'Quiz saved, but email failed: {exc}'
+                        else:
+                            st.session_state.email_result = 'Email disabled; quiz saved successfully.'
                         st.session_state.quiz_feedback = details
                         st.session_state.quiz_score = score
                         st.session_state.quiz_submitted = True
@@ -356,6 +489,7 @@ else:
             score = st.session_state.quiz_score
             total = len(st.session_state.quiz_feedback)
             st.metric('Your score', f'{score} / {total}')
+            st.caption(st.session_state.get('email_result', ''))
             st.progress(score / total)
             st.subheader('Detailed feedback')
             for i, d in enumerate(st.session_state.quiz_feedback, 1):
