@@ -1,17 +1,45 @@
-# AI Quiz Workshop — Module 3
+# AI Quiz Workshop — Module 4
 
-Adds quiz submission, deterministic marking, per-question feedback, SQLite attempt history, and the Module 2 material-path fix.
+## Features
+Student registration/login, GPT-generated quizzes based on teacher material, automatic MCQ marking, SQLite attempt history, student progress chart, teacher login, upload, attempt filtering and detailed review.
 
-## Setup
+## Start
+1. Python 3.10+ recommended.
+2. `python -m venv .venv`
+3. Activate: Windows PowerShell `.venv\Scripts\Activate.ps1` / macOS `source .venv/bin/activate`
+4. `python -m pip install -r requirements.txt`
+5. Set `OPENAI_API_KEY` and `TEACHER_PASSWORD` environment variables (see below).
+6. `streamlit run app.py`
 
-1. Open a terminal in this folder.
-2. Create a virtual environment: `python -m venv .venv`
-3. Activate it: Windows PowerShell `.venv\Scripts\Activate.ps1`; macOS/Linux `source .venv/bin/activate`
-4. Install: `python -m pip install -r requirements.txt`
-5. Set your API key: PowerShell `$env:OPENAI_API_KEY="..."`; macOS/Linux `export OPENAI_API_KEY="..."`. Never commit secrets.
-6. Run: `streamlit run app.py`
-7. Student: ID `ST001`, LO `LO1`, Chapter `Introduction`, Topic `Basics`, count `3`. Create quiz, answer, submit, inspect score and attempt history.
+Windows PowerShell:
+```powershell
+$env:OPENAI_API_KEY="YOUR_KEY"
+$env:TEACHER_PASSWORD="CHOOSE_A_LONG_RANDOM_PASSWORD"
+streamlit run app.py
+```
 
-## Important
+macOS Terminal:
+```bash
+export OPENAI_API_KEY="YOUR_KEY"
+export TEACHER_PASSWORD="CHOOSE_A_LONG_RANDOM_PASSWORD"
+streamlit run app.py
+```
 
-`quiz_attempts.db` is created locally and excluded from Git. Teacher-uploaded material is stored as JSON in `materials/`. Do not use real student data: there is no authentication or access control. SQLite data on ephemeral cloud hosting may disappear on restart. A hosted persistent database and real login are needed for deployment with students. GPT may make mistakes; teachers should review generated answer keys.
+## Test
+- Register ST001 with a password of at least 8 characters; log in.
+- Choose LO1 / Introduction / Basics (sample included), generate and submit a quiz.
+- Take a second quiz and see progress.
+- Log out; log in as Teacher using TEACHER_PASSWORD; filter attempts and open question feedback.
+- Upload a UTF-8 `.txt` file with a new LO, chapter, topic; log in as student and select it from the dropdown.
+- Try incorrect passwords; they should fail.
+
+## GitHub
+```bash
+git status
+git add .
+git commit -m "Module 4: teacher dashboard and basic login"
+git push origin main
+```
+
+## Limitations
+This is a teaching demo, not a production student information system. Teacher uses a shared password; no email verification, rate limiting, password reset, role administration, audit log or HTTPS enforcement by the application. The local SQLite DB and uploaded files are not reliable persistent storage on ephemeral cloud hosts. Never commit API keys, teacher passwords, or actual student data. GPT-generated keys and explanations can be inaccurate; teachers should review quizzes before high-stakes use. Existing Module 3 attempts remain in the database, but older demo student IDs must register before logging in.
