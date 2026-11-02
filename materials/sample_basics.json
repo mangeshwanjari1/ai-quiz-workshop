@@ -1,0 +1,6 @@
+{
+  "lo": "LO1",
+  "chapter": "Introduction",
+  "topic": "Basics",
+  "content": "A variable is a name that refers to a value in Python. The assignment operator = assigns a value to a variable. Python uses the print() function to display output. The input() function reads user input as a string. The int() function converts a suitable string into an integer. A list stores an ordered collection of items and is written using square brackets."
+}
