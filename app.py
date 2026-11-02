@@ -9,6 +9,7 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 from datetime import datetime, timezone
+from email.header import Header
 
 import streamlit as st
 from openai import OpenAI
@@ -240,8 +241,21 @@ def send_feedback_email(attempt_id, recipient):
     msg = EmailMessage()
     msg['From'] = sender
     msg['To'] = recipient
-    msg['Subject'] = subject
-    msg.set_content(body)
+    msg['Subject'] = "Your Quiz Feedback"
+    msg.set_content(body, charset="utf-8")
+    print("DEBUG: Checking email components")
+
+    for name, value in [
+        ("SMTP host", host),
+        ("SMTP username", username),
+        ("SMTP password", password),
+        ("Sender", sender),
+        ("Recipient", recipient),
+        ("Subject", msg["Subject"]),
+    ]:
+        value = str(value)
+        unusual = [(i, f"U+{ord(ch):04X}") for i, ch in enumerate(value) if not ch.isascii()]
+        print(name, unusual if unusual else "ASCII only")
     if port == 465:
         with smtplib.SMTP_SSL(host, port, timeout=20, context=ssl.create_default_context()) as smtp:
             smtp.login(username, password)

@@ -1,0 +1,5 @@
+export SMTP_HOST="smtp.gmail.com"
+export SMTP_PORT="465"
+export SMTP_USER="mangeshwanjari@gmail.com"
+export SMTP_FROM="mangeshwanjari@gmail.com"
+SMTP_PASSWORD="yuhq oytx hcgx ykmz"

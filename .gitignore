@@ -5,3 +5,14 @@ __pycache__/
 .env
 quiz_attempts.db
 quiz_attempts.db-*
+
+.streamlit/secrets.toml
+
+# Private credentials
+.streamlit/secrets.toml
+.env
+
+# Local environment and database
+.venv/
+__pycache__/
+*.db
